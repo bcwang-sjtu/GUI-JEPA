@@ -1,4 +1,6 @@
 """GUI-JEPA modules: JEPA encoder, residual latent predictor, structural head and text matcher."""
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -150,11 +152,15 @@ class CrossEncoderMatcher(nn.Module):
     and as the span ranker (query = goal, texts = candidate spans).
     """
 
-    def __init__(self, device, model_name=DEFAULT_MATCHER, dropout=0.0):
+    def __init__(self, device, model_name=DEFAULT_MATCHER, dropout=0.0, lm_dir=None):
         super().__init__()
         from transformers import AutoTokenizer, AutoModel
-        self.tok = AutoTokenizer.from_pretrained(model_name)
-        self.lm = AutoModel.from_pretrained(model_name)
+        tokenizer_source = model_name
+        if lm_dir and any(os.path.isfile(os.path.join(lm_dir, name))
+                          for name in ("tokenizer.json", "vocab.txt")):
+            tokenizer_source = lm_dir
+        self.tok = AutoTokenizer.from_pretrained(tokenizer_source)
+        self.lm = AutoModel.from_pretrained(lm_dir or model_name)
         self.head = nn.Linear(self.lm.config.hidden_size, 1)
         self.drop = nn.Dropout(dropout)
         self.device = device
@@ -171,10 +177,8 @@ class CrossEncoderMatcher(nn.Module):
 
 def load_span_ranker(ranker_dir, device, tokenizer_name=DEFAULT_SPAN_RANKER):
     """Load a trained span ranker saved by scripts/train_span_ranker.py."""
-    import os
-    from transformers import AutoModel
-    ranker = CrossEncoderMatcher(device, tokenizer_name).to(device)
-    ranker.lm = AutoModel.from_pretrained(os.path.join(ranker_dir, "ranker_lm")).to(device)
+    ranker = CrossEncoderMatcher(device, tokenizer_name,
+                                 lm_dir=os.path.join(ranker_dir, "ranker_lm")).to(device)
     ranker.head.load_state_dict(torch.load(os.path.join(ranker_dir, "ranker_head.pt"),
                                            map_location=device))
     ranker.eval()

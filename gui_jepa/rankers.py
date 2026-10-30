@@ -28,11 +28,16 @@ def click_cand_aux(cb_row, cf_row):
 class ClickReranker(nn.Module):
     """MiniLM cross-encoder over (goal, candidate text) fused with candidate geometry and flags."""
 
-    def __init__(self, device, model_name=DEFAULT_RERANKER_LM, aux_dim=AUX_DIM, dropout=0.1):
+    def __init__(self, device, model_name=DEFAULT_RERANKER_LM, aux_dim=AUX_DIM,
+                 dropout=0.1, lm_dir=None):
         super().__init__()
         from transformers import AutoTokenizer, AutoModel
-        self.tok = AutoTokenizer.from_pretrained(model_name)
-        self.lm = AutoModel.from_pretrained(model_name)
+        tokenizer_source = model_name
+        if lm_dir and any(os.path.isfile(os.path.join(lm_dir, name))
+                          for name in ("tokenizer.json", "vocab.txt")):
+            tokenizer_source = lm_dir
+        self.tok = AutoTokenizer.from_pretrained(tokenizer_source)
+        self.lm = AutoModel.from_pretrained(lm_dir or model_name)
         hidden = self.lm.config.hidden_size
         self.aux_dim = aux_dim
         self.head = nn.Sequential(
@@ -52,11 +57,10 @@ class ClickReranker(nn.Module):
 
 
 def load_reranker(ckpt_dir, device):
-    from transformers import AutoModel
     meta = json.load(open(os.path.join(ckpt_dir, "meta.json")))
     m = ClickReranker(device, model_name=meta["model_name"],
-                      aux_dim=meta.get("aux_dim", AUX_DIM), dropout=0.0)
-    m.lm = AutoModel.from_pretrained(os.path.join(ckpt_dir, "reranker_lm")).to(device)
+                      aux_dim=meta.get("aux_dim", AUX_DIM), dropout=0.0,
+                      lm_dir=os.path.join(ckpt_dir, "reranker_lm"))
     sd = torch.load(os.path.join(ckpt_dir, "reranker_head.pt"), map_location=device)
     m.head.load_state_dict(sd["head"] if isinstance(sd, dict) and "head" in sd else sd)
     m.to(device).eval()
