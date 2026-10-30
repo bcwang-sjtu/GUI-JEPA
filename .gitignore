@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+.ipynb_checkpoints/
+
+# data, caches and checkpoints
+data/
+cache/
+checkpoints/
+outputs/
+*.pt
+*.pth
+*.safetensors
+*.jsonl
+wandb/

@@ -1,0 +1,21 @@
+# Tested with Python 3.11, CUDA 12.8
+torch>=2.4
+torchvision>=0.19
+timm>=1.0
+transformers>=4.57
+numpy<2
+pillow
+tqdm
+
+# AndroidControl parsing (TFRecord + accessibility-forest protos)
+tfrecord
+android_env
+
+# VideoCUA frame extraction (encoder pretraining data)
+opencv-python
+
+# Same-protocol Qwen2.5-VL-7B reference (optional)
+peft>=0.13
+qwen-vl-utils
+# flash-attn  # optional, faster Qwen2.5-VL training / inference
+# vllm==0.11.2  # optional, vLLM latency benchmark of the 7B reference
