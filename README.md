@@ -7,6 +7,7 @@
 <p>
   <a href="https://arxiv.org/abs/2610.36877"><img src="https://img.shields.io/badge/arXiv-2610.36877-b31b1b?style=for-the-badge&logo=arxiv&logoColor=white" alt="arXiv"></a>
   <a href="https://arxiv.org/pdf/2610.36877"><img src="https://img.shields.io/badge/Paper-PDF-2563eb?style=for-the-badge&logo=adobeacrobatreader&logoColor=white" alt="Paper PDF"></a>
+  <a href="https://huggingface.co/LilCC/GUI-JEPA"><img src="https://img.shields.io/badge/🤗%20Hugging%20Face-Models-ffb000?style=for-the-badge" alt="Hugging Face Models"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-16a34a?style=for-the-badge" alt="License"></a>
   <img src="https://img.shields.io/badge/Python-3.11-3776ab?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11">
   <img src="https://img.shields.io/badge/PyTorch-2.4%2B-ee4c2c?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch">
@@ -25,6 +26,7 @@
   <a href="#-highlights">Highlights</a> ·
   <a href="#-method">Method</a> ·
   <a href="#-results">Results</a> ·
+  <a href="#pretrained-checkpoints">Checkpoints</a> ·
   <a href="#-getting-started">Getting Started</a> ·
   <a href="#-citation">Citation</a>
 </p>
@@ -42,6 +44,7 @@ in-distribution accuracy with 6% of its parameters**.
 
 ## 🔥 News
 
+- **[2026/10]** Final model checkpoints released on [Hugging Face](https://huggingface.co/LilCC/GUI-JEPA).
 - **[2026/10]** Code released.
 - **[2026/10]** Paper released on [arXiv](https://arxiv.org/abs/2610.36877).
 
@@ -158,6 +161,29 @@ conda create -n gui-jepa python=3.11 -y && conda activate gui-jepa
 pip install -r requirements.txt
 ```
 
+### Pretrained Checkpoints
+
+Download the final model bundle from [**LilCC/GUI-JEPA**](https://huggingface.co/LilCC/GUI-JEPA):
+
+| Checkpoint | AC-Low (IDD) | AC-High (IDD) | Download |
+|:--|--:|--:|:--|
+| **GUI-JEPA, final seed 3** | **84.06** | **60.99** | [🤗 Model bundle · 1.74 GB](https://huggingface.co/LilCC/GUI-JEPA/tree/main) |
+
+```bash
+hf download LilCC/GUI-JEPA --revision a2265ca26dbea66fc59c46240a90d3be5defdb9e \
+    --local-dir checkpoints/GUI-JEPA
+export CKPT="$PWD/checkpoints/GUI-JEPA"
+```
+
+The bundle contains the frozen visual encoder, final policy (including the trained predictor),
+span ranker, click reranker, their MiniLM weights and tokenizers, and the application vocabulary.
+The MiniLM modules load directly from the bundle. The frozen CLIP text encoder used for feature
+extraction and latency measurement is loaded from [its upstream repository](https://huggingface.co/openai/clip-vit-base-patch32)
+on the first run. Component details and SHA-256 checksums are on the [model page](https://huggingface.co/LilCC/GUI-JEPA).
+
+To evaluate these checkpoints, prepare the data and cache below, then run **Evaluation**.
+The [training section](#training) gives the recipe for training a new model.
+
 ### Data
 
 | Data | Used for | Source |
@@ -168,17 +194,8 @@ pip install -r requirements.txt
 
 ```bash
 export AC=/path/to/android_control          # TFRecord shards + splits.json + test_subsplits.json
-export PRETRAIN=/path/to/pretrain_screens   # GUI-Odyssey screenshots and VideoCUA frames (any folder tree)
 export CACHE=/path/to/ac_cache              # feature cache written below
-export CKPT=/path/to/checkpoints
 SHARDS="$AC/android_control-*-of-*"
-```
-
-### Stage 1: JEPA pretraining of the encoder
-
-```bash
-python scripts/pretrain_encoder.py --data $PRETRAIN --out $CKPT/encoder
-# ViT-L/16 (ImageNet init), random 50% patch masking, EMA 0.996, batch 96, 2 epochs -> encoder_1.pt
 ```
 
 ### Cache AndroidControl
@@ -192,29 +209,12 @@ python scripts/preprocess/build_cache.py --shards "$SHARDS" --splits-dir $AC \
 
 The encoder runs once here; policy training reads the cached patch tokens and never runs the backbone.
 
-### Stage 2: policy training
-
-```bash
-# predictor initialisation (optional: --fresh-predictor below does as well)
-python scripts/pretrain_dynamics.py --cache $CACHE --out $CKPT/dynamics
-# base policy: residual predictor + structural head + MiniLM text matcher, 6 epochs, one model for Low and High
-python scripts/train_policy.py --cache $CACHE --init-predictor $CKPT/dynamics/predictor.pt \
-    --out $CKPT/policy --seed 3
-```
-
-### Stage 3: text rankers
-
-```bash
-python scripts/train_span_ranker.py --cache $CACHE --out $CKPT/span_ranker
-python scripts/click_reranker.py build --cache $CACHE --out $CACHE/click_reranker_train.pt
-python scripts/click_reranker.py train --data $CACHE/click_reranker_train.pt --out $CKPT/click_reranker --seed 3
-```
-
 ### Evaluation
 
 ```bash
 python scripts/train_policy.py --cache $CACHE --eval-only --ckpt-dir $CKPT/policy \
     --span-ranker $CKPT/span_ranker --click-reranker $CKPT/click_reranker \
+    --app-vocab $CKPT/metadata/app_vocab.json --seed 1 \
     --subsplit IDD --out outputs/eval_IDD
 # --subsplit full | app_unseen | task_unseen | category_unseen   (OOD subsplits: add --subsplits-json $AC/test_subsplits.json)
 # --eval-split validation                                       (validation split)
@@ -237,8 +237,51 @@ python scripts/preprocess/export_screenshots.py --shards "$SHARDS" --eids $CACHE
 python scripts/benchmark_latency.py --cache $CACHE --images $CACHE/images \
     --encoder-ckpt $CKPT/encoder/encoder_1.pt --ckpt-dir $CKPT/policy \
     --span-ranker $CKPT/span_ranker --click-reranker $CKPT/click_reranker \
+    --app-vocab $CKPT/metadata/app_vocab.json \
     --n-steps 100 --out outputs/latency_fp32.json          # add --bf16 for bf16 autocast
 ```
+
+<a id="training"></a>
+
+## 🛠️ Training
+
+Use a separate output directory for a new training run:
+
+```bash
+export CKPT="$PWD/checkpoints/trained"
+export PRETRAIN=/path/to/pretrain_screens  # GUI-Odyssey screenshots and VideoCUA frames
+```
+
+### Stage 1: JEPA pretraining of the encoder
+
+```bash
+python scripts/pretrain_encoder.py --data $PRETRAIN --out $CKPT/encoder
+# ViT-L/16 (ImageNet init), random 50% patch masking, EMA 0.996, batch 96, 2 epochs -> encoder_1.pt
+```
+
+After encoder pretraining, build the AndroidControl feature cache with this encoder using
+**Cache AndroidControl** above, then train the policy and the two rankers:
+
+### Stage 2: policy training
+
+```bash
+# predictor initialisation (optional: --fresh-predictor below does as well)
+python scripts/pretrain_dynamics.py --cache $CACHE --out $CKPT/dynamics
+# base policy: residual predictor + structural head + MiniLM text matcher, 6 epochs, one model for Low and High
+python scripts/train_policy.py --cache $CACHE --init-predictor $CKPT/dynamics/predictor.pt \
+    --out $CKPT/policy --seed 3
+```
+
+### Stage 3: text rankers
+
+```bash
+python scripts/train_span_ranker.py --cache $CACHE --out $CKPT/span_ranker
+python scripts/click_reranker.py build --cache $CACHE --out $CACHE/click_reranker_train.pt
+python scripts/click_reranker.py train --data $CACHE/click_reranker_train.pt --out $CKPT/click_reranker --seed 3
+```
+
+Evaluate a newly trained model with the **Evaluation** command above, using
+`--app-vocab "$CACHE/app_vocab.json"` for the vocabulary generated from its training data.
 
 ### Mechanism analyses
 
