@@ -136,7 +136,8 @@ def main():
 
     cond_extra = A_DIM + args.embed_dim  # history: previous action vector + mean latent change
     wm_head = StructuralHead(zdim=args.embed_dim, cond_extra=cond_extra).to(dev)
-    matcher = CrossEncoderMatcher(dev, args.matcher_model).to(dev)
+    matcher_lm_dir = os.path.join(args.ckpt_dir, "matcher_lm") if args.eval_only else None
+    matcher = CrossEncoderMatcher(dev, args.matcher_model, lm_dir=matcher_lm_dir).to(dev)
 
     span_ranker = load_span_ranker(args.span_ranker, dev) if args.span_ranker else None
 
@@ -148,8 +149,6 @@ def main():
             predictor.load_state_dict(ck["predictor"])
         else:
             predictor.load_state_dict(torch.load(args.init_predictor, map_location=dev))
-        from transformers import AutoModel
-        matcher.lm = AutoModel.from_pretrained(os.path.join(args.ckpt_dir, "matcher_lm")).to(dev)
     click_reranker = load_reranker(args.click_reranker, dev) if args.click_reranker else None
 
     params = [{"params": matcher.lm.parameters(), "lr": args.lr_lm},

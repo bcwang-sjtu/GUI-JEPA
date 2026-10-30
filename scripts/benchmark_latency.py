@@ -64,6 +64,7 @@ def main():
     ap.add_argument("--span-ranker", required=True)
     ap.add_argument("--click-reranker", required=True)
     ap.add_argument("--cand-texts", default=None)
+    ap.add_argument("--app-vocab", default=None, help="default: <cache>/app_vocab.json")
     ap.add_argument("--rerank-beta", type=float, default=1.0)
     ap.add_argument("--rerank-gate", type=float, default=1.0)
     ap.add_argument("--span-max-words", type=int, default=16)
@@ -88,13 +89,12 @@ def main():
     predictor = LatentPredictor(embed_dim=ED, action_dim=A_DIM + ED, num_patches_side=14,
                                 depth=args.pred_depth).to(dev)
     wm_head = StructuralHead(zdim=ED, cond_extra=A_DIM + ED).to(dev)
-    matcher = CrossEncoderMatcher(dev, args.matcher_model).to(dev)
+    matcher = CrossEncoderMatcher(dev, args.matcher_model,
+                                  lm_dir=os.path.join(args.ckpt_dir, "matcher_lm")).to(dev)
     ck = torch.load(os.path.join(args.ckpt_dir, "heads.pt"), map_location=dev)
     wm_head.load_state_dict(ck["wm_head"])
     matcher.head.load_state_dict(ck["matcher_head"])
     predictor.load_state_dict(ck["predictor"])
-    from transformers import AutoModel
-    matcher.lm = AutoModel.from_pretrained(os.path.join(args.ckpt_dir, "matcher_lm")).to(dev)
     span_ranker = load_span_ranker(args.span_ranker, dev)
     reranker = load_reranker(args.click_reranker, dev)
     modules = (vit, predictor, wm_head, matcher, span_ranker, reranker)
@@ -106,7 +106,8 @@ def main():
             m.to(torch.bfloat16)
     ac = (lambda: torch.autocast("cuda", dtype=torch.bfloat16)) if args.bf16 \
         else (lambda: torch.autocast("cuda", enabled=False))
-    app_vocab = list(json.load(open(os.path.join(args.cache, "app_vocab.json"))).keys())
+    app_vocab_path = args.app_vocab or os.path.join(args.cache, "app_vocab.json")
+    app_vocab = list(json.load(open(app_vocab_path)).keys())
     texts = load_json_int_keys(os.path.join(args.cache, "instr_texts.json"))
     cand_texts = load_json_int_keys(args.cand_texts or os.path.join(args.cache, "cand_texts.json"))
     nparams = lambda m: sum(p.numel() for p in m.parameters()) / 1e6
